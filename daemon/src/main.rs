@@ -1,5 +1,5 @@
 use color_eyre::eyre::Context;
-use cosmic_greeter_daemon::UserData;
+use cosmic_greeter_daemon::{UserData, UserListRequest};
 use std::{env, error::Error, future::pending, io, path::Path};
 use tracing::metadata::LevelFilter;
 use tracing::warn;
@@ -52,10 +52,24 @@ enum GreeterError {
     RunAsUser(String),
 }
 
-struct GreeterProxy;
+#[derive(Default)]
+struct GreeterProxy {
+    user_list: UserListRequest,
+}
 
 #[zbus::interface(name = "com.system76.CosmicGreeter")]
 impl GreeterProxy {
+    /// Open the next greeter on its user list. Any user may ask, before signing out to let
+    /// someone else sign in; the bus policy allows nothing else to them.
+    fn request_user_list(&self) {
+        self.user_list.request();
+    }
+
+    /// Whether the greeter should open on its user list, clearing the request.
+    fn take_user_list_request(&self) -> bool {
+        self.user_list.take()
+    }
+
     fn get_user_data(&mut self) -> Result<String, GreeterError> {
         // The pwd::Passwd method is unsafe (but not labelled as such) due to using global state (libc pwent functions).
         // To prevent issues, this should only be called once in the entire process space at a time
@@ -141,7 +155,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let _conn = Builder::system()?
         .name("com.system76.CosmicGreeter")?
-        .serve_at("/com/system76/CosmicGreeter", GreeterProxy)?
+        .serve_at("/com/system76/CosmicGreeter", GreeterProxy::default())?
         .build()
         .await?;
 
