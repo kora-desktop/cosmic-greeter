@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/kora-desktop/cosmic-greeter/compare/v1.1.0...v1.2.0) (2026-11-11)
+
+
+### Features
+
+* **greeter:** open on the user list when the last session asks ([978d5c8](https://github.com/kora-desktop/cosmic-greeter/commit/978d5c8080046dd2e71fc182ba3c6bc740b9c2fa))
+
 # [1.1.0](https://github.com/playtron-os/cosmic-greeter/compare/v1.0.2...v1.1.0) (2026-10-29)
 
 
