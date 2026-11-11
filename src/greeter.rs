@@ -78,6 +78,19 @@ static USERNAME_ID: LazyLock<iced::id::Id> = LazyLock::new(|| iced::id::Id::new(
 )]
 trait Greeter {
     async fn get_user_data(&self) -> Result<String, zbus::Error>;
+    async fn take_user_list_request(&self) -> Result<bool, zbus::Error>;
+}
+
+/// Whether the session before this greeter asked it to open on its user list.
+async fn user_list_requested() -> Result<bool, Box<dyn Error>> {
+    let connection = Connection::system().await?;
+    let proxy = GreeterProxy::new(&connection).await?;
+    Ok(proxy.take_user_list_request().await?)
+}
+
+/// The dropdown the greeter opens with: the user list after Switch user, else none.
+fn initial_dropdown(user_list: bool) -> Option<Dropdown> {
+    user_list.then_some(Dropdown::User)
 }
 
 async fn user_data_dbus() -> Result<Vec<UserData>, Box<dyn Error>> {
@@ -158,6 +171,13 @@ pub fn main() -> Result<(), Box<dyn Error>> {
             user_data_fallback()
         }
     };
+
+    let user_list = runtime
+        .block_on(user_list_requested())
+        .unwrap_or_else(|err| {
+            tracing::warn!("failed to read the user list request from daemon: {}", err);
+            false
+        });
 
     // Sort user data by uid
     user_datas.sort_by(|a, b| a.uid.cmp(&b.uid));
@@ -314,6 +334,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
         sessions,
         greeter_config,
         greeter_config_handler,
+        user_list,
     };
 
     let settings = Settings::default().no_main_window(true);
@@ -330,6 +351,8 @@ pub struct Flags {
     sessions: HashMap<String, (Vec<String>, Vec<String>)>,
     greeter_config: CosmicGreeterConfig,
     greeter_config_handler: Option<cosmic_config::Config>,
+    /// Open on the user list, as the session before asked when it switched user.
+    user_list: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1166,6 +1189,7 @@ impl cosmic::Application for App {
             ..Default::default()
         };
 
+        let dropdown_opt = initial_dropdown(flags.user_list);
         let app = App {
             common,
             flags,
@@ -1176,7 +1200,7 @@ impl cosmic::Application for App {
             session_names,
             selected_session,
             dialog_page_opt: None,
-            dropdown_opt: None,
+            dropdown_opt,
             heartbeat_handle: None,
             entering_name: false,
             accessibility,
@@ -1936,4 +1960,15 @@ pub fn apply_hc_theme(
     let new_theme = builder.build();
 
     Ok(new_theme)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Dropdown, initial_dropdown};
+
+    #[test]
+    fn opens_on_the_user_list_only_when_asked() {
+        assert_eq!(initial_dropdown(true), Some(Dropdown::User));
+        assert_eq!(initial_dropdown(false), None);
+    }
 }

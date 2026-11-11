@@ -5,12 +5,29 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 pub use cosmic_applets_config::time::TimeAppletConfig;
 pub use cosmic_bg_config::{Color, Source as BgSource, state::State as BgState};
 pub use cosmic_comp_config::{CosmicCompConfig, XkbConfig, ZoomConfig};
 pub use cosmic_theme::{Theme, ThemeBuilder};
+
+/// Whether the next greeter should open on its user list, as after Switch user. Held in the
+/// daemon's memory, which outlives sessions; a reboot forgets it.
+#[derive(Debug, Default)]
+pub struct UserListRequest(AtomicBool);
+
+impl UserListRequest {
+    pub fn request(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether a request came in since the last take, clearing it.
+    pub fn take(&self) -> bool {
+        self.0.swap(false, Ordering::SeqCst)
+    }
+}
 
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct UserData {
@@ -229,5 +246,20 @@ impl From<pwd::Passwd> for UserData {
             full_name,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UserListRequest;
+
+    #[test]
+    fn user_list_request_is_taken_once() {
+        let request = UserListRequest::default();
+        assert!(!request.take());
+        request.request();
+        request.request();
+        assert!(request.take());
+        assert!(!request.take());
     }
 }
